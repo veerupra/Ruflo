@@ -1,14 +1,17 @@
-import { CLI, success, error, warning, info, VERSION } from "../cli-core.ts";
-import type { Command, CommandContext } from "../cli-core.ts";
-import { bold, blue, yellow } from "https://deno.land/std@0.224.0/fmt/colors.ts";
-import { Orchestrator } from "../../core/orchestrator-fixed.ts";
-import { ConfigManager } from "../../core/config.ts";
-import { MemoryManager } from "../../memory/manager.ts";
-import { EventBus } from "../../core/event-bus.ts";
-import { Logger } from "../../core/logger.ts";
-import { JsonPersistenceManager } from "../../core/json-persistence.ts";
-import { swarmAction } from "./swarm.ts";
-import { SimpleMemoryManager } from "./memory.ts";
+import { CLI, success, error, warning, info, VERSION } from "../cli-core.js";
+import type { Command, CommandContext } from "../cli-core.js";
+import colors from "chalk";
+const { bold, blue, yellow } = colors;
+import { Orchestrator } from "../../core/orchestrator-fixed.js";
+import { ConfigManager } from "../../core/config.js";
+import { MemoryManager } from "../../memory/manager.js";
+import { EventBus } from "../../core/event-bus.js";
+import { Logger } from "../../core/logger.js";
+import { JsonPersistenceManager } from "../../core/json-persistence.js";
+import { swarmAction } from "./swarm.js";
+import { SimpleMemoryManager } from "./memory.js";
+import { sparcAction } from "./sparc.js";
+import { createMigrateCommand } from "./migrate.js";
 
 let orchestrator: Orchestrator | null = null;
 let configManager: ConfigManager | null = null;
@@ -71,7 +74,8 @@ export function setupCommands(cli: CLI): void {
         const existingFiles = [];
         
         for (const file of files) {
-          const exists = await Deno.stat(file).then(() => true).catch(() => false);
+          const { access } = await import("fs/promises");
+          const exists = await access(file).then(() => true).catch(() => false);
           if (exists) {
             existingFiles.push(file);
           }
@@ -85,17 +89,18 @@ export function setupCommands(cli: CLI): void {
         
         // Create CLAUDE.md
         const claudeMd = minimal ? createMinimalClaudeMd() : createFullClaudeMd();
-        await Deno.writeTextFile("CLAUDE.md", claudeMd);
+        const { writeFile } = await import("fs/promises");
+        await writeFile("CLAUDE.md", claudeMd);
         console.log("  ✓ Created CLAUDE.md");
         
         // Create memory-bank.md  
         const memoryBankMd = minimal ? createMinimalMemoryBankMd() : createFullMemoryBankMd();
-        await Deno.writeTextFile("memory-bank.md", memoryBankMd);
+        await writeFile("memory-bank.md", memoryBankMd);
         console.log("  ✓ Created memory-bank.md");
         
         // Create coordination.md
         const coordinationMd = minimal ? createMinimalCoordinationMd() : createFullCoordinationMd();
-        await Deno.writeTextFile("coordination.md", coordinationMd);
+        await writeFile("coordination.md", coordinationMd);
         console.log("  ✓ Created coordination.md");
         
         // Create directory structure
@@ -114,12 +119,13 @@ export function setupCommands(cli: CLI): void {
           directories.unshift("memory");
         }
         
+        const { mkdir } = await import("fs/promises");
         for (const dir of directories) {
           try {
-            await Deno.mkdir(dir, { recursive: true });
+            await mkdir(dir, { recursive: true });
             console.log(`  ✓ Created ${dir}/ directory`);
           } catch (err) {
-            if (!(err instanceof Deno.errors.AlreadyExists)) {
+            if ((err as any).code !== 'EEXIST') {
               throw err;
             }
           }
@@ -127,11 +133,11 @@ export function setupCommands(cli: CLI): void {
         
         // Create placeholder files for memory directories
         const agentsReadme = createAgentsReadme();
-        await Deno.writeTextFile("memory/agents/README.md", agentsReadme);
+        await writeFile("memory/agents/README.md", agentsReadme);
         console.log("  ✓ Created memory/agents/README.md");
         
         const sessionsReadme = createSessionsReadme();
-        await Deno.writeTextFile("memory/sessions/README.md", sessionsReadme);
+        await writeFile("memory/sessions/README.md", sessionsReadme);
         console.log("  ✓ Created memory/sessions/README.md");
         
         // Initialize the persistence database
@@ -140,7 +146,7 @@ export function setupCommands(cli: CLI): void {
           tasks: [],
           lastUpdated: Date.now()
         };
-        await Deno.writeTextFile("memory/claude-flow-data.json", JSON.stringify(initialData, null, 2));
+        await writeFile("memory/claude-flow-data.json", JSON.stringify(initialData, null, 2));
         console.log("  ✓ Created memory/claude-flow-data.json (persistence database)");
         
         success("Claude Code integration files initialized successfully!");
@@ -201,21 +207,21 @@ export function setupCommands(cli: CLI): void {
             controller.abort();
           };
           
-          Deno.addSignalListener("SIGINT", shutdown);
-          Deno.addSignalListener("SIGTERM", shutdown);
+          process.on("SIGINT", shutdown);
+          process.on("SIGTERM", shutdown);
           
           try {
             await new Promise<void>((resolve) => {
               controller.signal.addEventListener('abort', () => resolve());
             });
           } finally {
-            Deno.removeSignalListener("SIGINT", shutdown);
-            Deno.removeSignalListener("SIGTERM", shutdown);
+            process.off("SIGINT", shutdown);
+            process.off("SIGTERM", shutdown);
           }
         }
       } catch (err) {
         error(`Failed to start system: ${(err as Error).message}`);
-        Deno.exit(1);
+        process.exit(1);
       }
     },
   });
@@ -331,7 +337,8 @@ export function setupCommands(cli: CLI): void {
           }
           
           try {
-            const content = await Deno.readTextFile(workflowFile);
+            const { readFile } = await import("fs/promises");
+            const content = await readFile(workflowFile, "utf-8");
             const workflow = JSON.parse(content);
             
             success("Workflow loaded:");
@@ -438,7 +445,8 @@ export function setupCommands(cli: CLI): void {
         const stats = await persist.getStats();
         
         // Check if orchestrator is running by looking for the log file
-        const isRunning = await Deno.stat("orchestrator.log").then(() => true).catch(() => false);
+        const { access } = await import("fs/promises");
+        const isRunning = await access("orchestrator.log").then(() => true).catch(() => false);
         
         success("Claude-Flow System Status:");
         console.log(`🟢 Status: ${isRunning ? 'Running' : 'Stopped'}`);
@@ -999,10 +1007,10 @@ Now, please proceed with the task: ${task}`;
             console.log('');
             
             // Execute Claude command
-            const command = new Deno.Command("claude", {
-              args: claudeCmd.slice(1).map(arg => arg.replace(/^"|"$/g, '')),
+            const { spawn } = await import("child_process");
+            const child = spawn("claude", claudeCmd.slice(1).map(arg => arg.replace(/^"|"$/g, '')), {
               env: {
-                ...Deno.env.toObject(),
+                ...process.env,
                 CLAUDE_INSTANCE_ID: instanceId,
                 CLAUDE_FLOW_MODE: ctx.flags.mode as string || "full",
                 CLAUDE_FLOW_COVERAGE: (ctx.flags.coverage || 80).toString(),
@@ -1013,13 +1021,14 @@ Now, please proceed with the task: ${task}`;
                 CLAUDE_FLOW_COORDINATION_ENABLED: ctx.flags.parallel ? 'true' : 'false',
                 CLAUDE_FLOW_FEATURES: 'memory,coordination,swarm',
               },
-              stdin: "inherit",
-              stdout: "inherit",
-              stderr: "inherit",
+              stdio: "inherit",
             });
             
-            const child = command.spawn();
-            const status = await child.status;
+            const status = await new Promise((resolve) => {
+              child.on("close", (code) => {
+                resolve({ success: code === 0, code });
+              });
+            });
             
             if (status.success) {
               success(`Claude instance ${instanceId} completed successfully`);
@@ -1041,7 +1050,8 @@ Now, please proceed with the task: ${task}`;
           }
           
           try {
-            const content = await Deno.readTextFile(workflowFile);
+            const { readFile } = await import("fs/promises");
+            const content = await readFile(workflowFile, "utf-8");
             const workflow = JSON.parse(content);
             
             success(`Loading workflow: ${workflow.name || "Unnamed"}`);
@@ -1082,25 +1092,29 @@ Now, please proceed with the task: ${task}`;
               
               console.log(`\n🚀 Spawning Claude for task: ${task.name || taskId}`);
               
-              const command = new Deno.Command("claude", {
-                args: claudeCmd.slice(1).map(arg => arg.replace(/^"|"$/g, '')),
+              const { spawn } = await import("child_process");
+              const child = spawn("claude", claudeCmd.slice(1).map(arg => arg.replace(/^"|"$/g, '')), {
                 env: {
-                  ...Deno.env.toObject(),
+                  ...process.env,
                   CLAUDE_TASK_ID: taskId,
                   CLAUDE_TASK_TYPE: task.type || "general",
                 },
-                stdin: "inherit",
-                stdout: "inherit", 
-                stderr: "inherit",
+                stdio: "inherit",
               });
               
-              const child = command.spawn();
-              
               if (workflow.parallel) {
-                promises.push(child.status);
+                promises.push(new Promise((resolve) => {
+                  child.on("close", (code) => {
+                    resolve({ success: code === 0, code });
+                  });
+                }));
               } else {
                 // Wait for completion if sequential
-                const status = await child.status;
+                const status = await new Promise((resolve) => {
+                  child.on("close", (code) => {
+                    resolve({ success: code === 0, code });
+                  });
+                });
                 if (!status.success) {
                   error(`Task ${taskId} failed with code ${status.code}`);
                 }
@@ -1167,7 +1181,8 @@ Now, please proceed with the task: ${task}`;
         const stats = await persist.getStats();
         
         // Check if orchestrator is running
-        const isRunning = await Deno.stat("orchestrator.log").then(() => true).catch(() => false);
+        const { access } = await import("fs/promises");
+        const isRunning = await access("orchestrator.log").then(() => true).catch(() => false);
         
         if (!isRunning) {
           warning("Orchestrator is not running. Start it first with 'claude-flow start'");
@@ -1185,14 +1200,14 @@ Now, please proceed with the task: ${task}`;
         const cleanup = () => {
           running = false;
           console.log("\nMonitor stopped");
-          Deno.exit(0);
+          process.exit(0);
         };
         
-        Deno.addSignalListener("SIGINT", cleanup);
-        Deno.addSignalListener("SIGTERM", cleanup);
+        process.on("SIGINT", cleanup);
+        process.on("SIGTERM", cleanup);
         
         // Hide cursor
-        Deno.stdout.writeSync(new TextEncoder().encode('\x1b[?25l'));
+        process.stdout.write('\x1b[?25l');
         
         while (running) {
           try {
@@ -1250,7 +1265,7 @@ Now, please proceed with the task: ${task}`;
         }
         
         // Show cursor
-        Deno.stdout.writeSync(new TextEncoder().encode('\x1b[?25h'));
+        process.stdout.write('\x1b[?25h');
         
       } catch (err) {
         error(`Failed to start monitor: ${(err as Error).message}`);
@@ -1350,6 +1365,55 @@ Now, please proceed with the task: ${task}`;
     ],
     action: swarmAction,
   });
+
+  // SPARC command
+  cli.command({
+    name: "sparc",
+    description: "SPARC-based TDD development with specialized modes",
+    options: [
+      {
+        name: "namespace",
+        short: "n",
+        description: "Memory namespace for this session",
+        type: "string",
+        default: "sparc",
+      },
+      {
+        name: "no-permissions",
+        description: "Skip permission prompts",
+        type: "boolean",
+      },
+      {
+        name: "config",
+        short: "c",
+        description: "MCP configuration file",
+        type: "string",
+      },
+      {
+        name: "verbose",
+        short: "v",
+        description: "Enable verbose output",
+        type: "boolean",
+      },
+      {
+        name: "dry-run",
+        short: "d",
+        description: "Preview what would be executed",
+        type: "boolean",
+      },
+      {
+        name: "sequential",
+        description: "Wait between workflow steps",
+        type: "boolean",
+        default: true,
+      },
+    ],
+    action: sparcAction,
+  });
+
+  // Migration command
+  const migrateCmd = createMigrateCommand();
+  cli.command(migrateCmd);
 
   // Swarm UI command (convenience wrapper)
   cli.command({
@@ -1507,6 +1571,44 @@ Now, please proceed with the task: ${task}`;
         console.log("For more information, see:");
         console.log("  - https://github.com/ruvnet/claude-code-flow/docs/12-swarm.md");
         console.log("  - https://github.com/ruvnet/claude-code-flow/SWARM_TTY_SOLUTION.md");
+      } else if (command === "sparc") {
+        console.log(bold(blue("SPARC Development Mode")));
+        console.log();
+        console.log("SPARC (Specification, Pseudocode, Architecture, Refinement, Completion)");
+        console.log("TDD-based development with specialized AI modes from .roomodes configuration.");
+        console.log();
+        console.log(bold("Subcommands:"));
+        console.log("  modes                    List all available SPARC modes");
+        console.log("  info <mode>              Show detailed information about a mode");
+        console.log("  run <mode> <task>        Execute a task using a specific SPARC mode");
+        console.log("  tdd <task>               Run full TDD workflow using SPARC methodology");
+        console.log("  workflow <file>          Execute a custom SPARC workflow from JSON file");
+        console.log();
+        console.log(bold("Common Modes:"));
+        console.log("  spec-pseudocode          Create specifications and pseudocode");
+        console.log("  architect                Design system architecture");
+        console.log("  code                     Implement code solutions");
+        console.log("  tdd                      Test-driven development");
+        console.log("  debug                    Debug and troubleshoot issues");
+        console.log("  security-review          Security analysis and review");
+        console.log("  docs-writer              Documentation creation");
+        console.log("  integration              System integration and testing");
+        console.log();
+        console.log(bold("Options:"));
+        console.log("  -n, --namespace <ns>     Memory namespace for this session");
+        console.log("  --no-permissions         Skip permission prompts");
+        console.log("  -c, --config <file>      MCP configuration file");
+        console.log("  -v, --verbose            Enable verbose output");
+        console.log("  -d, --dry-run            Preview what would be executed");
+        console.log("  --sequential             Wait between workflow steps (default: true)");
+        console.log();
+        console.log(bold("Examples:"));
+        console.log(`  ${blue("claude-flow sparc modes")}                              # List all modes`);
+        console.log(`  ${blue("claude-flow sparc run code")} "implement user auth"      # Run specific mode`);
+        console.log(`  ${blue("claude-flow sparc tdd")} "payment processing system"    # Full TDD workflow`);
+        console.log(`  ${blue("claude-flow sparc workflow")} project-workflow.json     # Custom workflow`);
+        console.log();
+        console.log("For more information, see: https://github.com/ruvnet/claude-code-flow/docs/sparc.md");
       } else {
         // Show general help
         cli.showHelp();

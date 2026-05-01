@@ -1,45 +1,46 @@
-# Claude Code Integration Guide
+# Claude Code Configuration
 
-This document provides comprehensive guidance to Claude when working with this codebase.
+## Build Commands
+- `npm run build`: Build the project using Deno compile
+- `npm run test`: Run the full test suite
+- `npm run lint`: Run ESLint and format checks
+- `npm run typecheck`: Run TypeScript type checking
+- `./claude-flow start`: Start the orchestration system
+- `./claude-flow --help`: Show all available commands
 
-## Project Overview
-[Provide a detailed description of your project, its purpose, and main features]
+## Code Style Preferences
+- Use ES modules (import/export) syntax, not CommonJS (require)
+- Destructure imports when possible (e.g., `import { foo } from 'bar'`)
+- Use TypeScript for all new code
+- Follow existing naming conventions (camelCase for variables, PascalCase for classes)
+- Add JSDoc comments for public APIs
+- Use async/await instead of Promise chains
+- Prefer const/let over var
 
-## Architecture
-[Describe the overall architecture, main components, and how they interact]
+## Workflow Guidelines
+- Always run typecheck after making code changes
+- Run tests before committing changes
+- Use meaningful commit messages following conventional commits
+- Create feature branches for new functionality
+- Ensure all tests pass before merging
 
-## Code Conventions
-- **Naming**: [Describe naming conventions for files, functions, variables, etc.]
-- **Style**: [Code formatting preferences, linting rules]
-- **Patterns**: [Design patterns used in the project]
-- **Testing**: [Testing approach and requirements]
+## Project Architecture
+This is a Claude-Flow AI agent orchestration system with the following components:
+- **CLI Interface**: Command-line tools for managing the system
+- **Orchestrator**: Core engine for coordinating agents and tasks
+- **Memory System**: Persistent storage and retrieval of information
+- **Terminal Management**: Automated terminal session handling
+- **MCP Integration**: Model Context Protocol server for Claude integration
+- **Agent Coordination**: Multi-agent task distribution and management
 
-## Directory Structure
-```
-project/
-├── src/          # Source code
-├── tests/        # Test files
-├── docs/         # Documentation
-└── ...           # Other directories
-```
+## Important Notes
+- Use `claude --dangerously-skip-permissions` for unattended operation
+- The system supports both daemon and interactive modes
+- Memory persistence is handled automatically
+- All components are event-driven for scalability
 
-## Development Workflow
-1. [Step-by-step development process]
-2. [How to run tests]
-3. [How to build/deploy]
-
-## Important Considerations
-- [Security considerations]
-- [Performance requirements]
-- [Compatibility requirements]
-
-## Common Tasks
-- **Add a new feature**: [Instructions]
-- **Fix a bug**: [Process]
-- **Update documentation**: [Guidelines]
-
-## Dependencies
-[List key dependencies and their purposes]
-
-## Troubleshooting
-[Common issues and solutions]
+## Debugging
+- Check logs in `./claude-flow.log`
+- Use `./claude-flow status` to check system health
+- Monitor with `./claude-flow monitor` for real-time updates
+- Verbose output available with `--verbose` flag on most commands
